@@ -1,0 +1,721 @@
+\documentclass{beamer}
+\usetheme{metropolis}
+\usepackage[utf8]{inputenc}
+\usepackage{amsfonts}
+\usepackage{amsmath}
+\usepackage{natbib}
+\usepackage{graphicx}
+\usepackage{array,booktabs,tabularx}
+\usepackage{epstopdf}
+\usepackage{colortbl, xcolor}
+\usepackage{verbatim}
+
+\definecolor{my_orange}{RGB}{255, 165, 122}
+\definecolor{my_blue}{RGB}{100, 149, 237}
+
+\title{dpcReport: web server and software suite for unified analysis of digital PCRs and digital assays }
+\date{}
+\author{\scriptsize{Micha\l{} Burdukiewicz\inst{1}, 
+Jim Huggett\inst{2},
+Alexandra Whale\inst{2},
+Piotr Sobczyk\inst{3}, 
+Pawe\l{} Mackiewicz\inst{1},
+Andrej-Nikolai Spiess\inst{3},
+Peter Schierack\inst{5},
+and Stefan R\"{o}diger\inst{5}}}
+
+\institute{\tiny{\textsuperscript{1}University of Wroc\l{}aw, Department of Genomics, 
+
+\textsuperscript{2}Molecular and Cell Biology Team, LGC, Teddington, United Kingdom,
+
+\textsuperscript{3}Wroc\l{}aw University of Science and Technology, Faculty of Pure and Applied Mathematics,
+
+\textsuperscript{4}University Medical Center Hamburg-Eppendorf, Hamburg, Germany,
+
+\textsuperscript{5}Brandenburg University of Technology Cottbus-Senftenberg, Institute of Biotechnology 
+}}
+
+\begin{document}
+  \maketitle
+  
+  \begin{frame}{Outline}
+  \begin{enumerate}
+  \item dPCR software.
+  \item Aim.
+  \item dpcReport framework.
+  \item Reproducibility.
+  \item Conclusions.
+  \end{enumerate}
+  \end{frame}
+  
+  \section{dPCR software}
+  
+\begin{frame}{dPCR-related publications}
+<<knitrIntro, echo = FALSE, message=FALSE,warning=FALSE,fig.height = 4>>=
+source("my_ggplot_theme.R")
+
+library(dplyr)
+library(reshape2)
+library(xtable)
+library(dpcR)
+
+pub_dat <- read.csv("./data/dpcr_final_data.csv")
+
+filter(pub_dat, variable == "Observed") %>% 
+  ggplot(aes(x = year, y = value)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "blue") +
+  scale_y_continuous("Number of publications") +
+  scale_x_continuous("Year") +
+  my_theme
+
+@
+  
+
+Number of publications with words "digital PCR" or "dPCR" in the title/abstract.
+
+\end{frame}
+
+
+\begin{frame}{dPCR-related publications}
+<<echo = FALSE, message=FALSE,warning=FALSE,fig.height = 4>>=
+
+pub_dat_cum <- lapply(c("Observed", "Predicted"), function(ith_var)
+  lapply(unique(pub_dat[["year"]]), function(ith_year) {
+    n_times <- filter(pub_dat, year == ith_year, variable == ith_var)[["value"]]
+    if(n_times > 0) {
+      data.frame(year = ith_year, variable = rep(ith_var, n_times))
+    } else {
+      data.frame(year = NULL, variable = NULL)
+    }
+})) %>% unlist(recursive = FALSE) %>% 
+  do.call(rbind, .)
+
+ggplot(pub_dat_cum, aes(x = year, fill = variable)) +
+  geom_bar(position = "dodge") +
+  scale_y_continuous("Number of publications") +
+  scale_x_continuous("Year") +
+  scale_fill_manual("", values = c("blue", "green")) +
+  my_theme
+
+@
+  
+541 expected publications in 2017.
+\end{frame}
+
+\begin{frame}{Vendor-provided dPCR software}
+% every rapidly emergining technique is accompanied by influx of the software
+
+Graphical user interfaces:
+\begin{itemize}
+\item QuantaSoft\textsuperscript{TM} (Bio-Rad),
+\item OpenArray\textsuperscript{\textregistered} Digital PCR Software (Thermo Fisher),
+\item Digital PCR Analysis software (Fluidigm).
+\end{itemize}
+
+\pause
+
+Closed-source software tied only to the vendor-specific data format.
+
+
+\end{frame}
+
+\begin{frame}{Other dPCR software}
+
+Scripts and smaller tools tied to very specific task:
+\begin{itemize}
+\item \textbf{Mathematica} \citep{strain_highly_2013-1},
+\item \textbf{MS EXCEL} \citep{dobnik_multiplex_2015},
+\item \textbf{R} \citep{dreo_optimising_2014, trypsteen_ddpcrquant:_2015, dorazio_statistical_2015, vynck_flexible_2016}.
+\end{itemize}
+
+\pause
+
+\textbf{R}: a software environment and a programming language \citep{r_core_team_r:_2016}, extensively used in bioinformatics and biostatistics.
+
+\end{frame}
+
+\begin{frame}{Other dPCR software}
+Web servers:
+
+\begin{itemize}
+\item uCount,
+\item definetherain \citep{jones_low_2014},
+\item ddpcr \citep{attali_ddpcr:_2016} (also the \textbf{R} package).
+\end{itemize}
+
+\end{frame}
+
+
+\begin{frame}{Other dPCR software}
+Problems addressed:
+
+\begin{itemize}
+\item elimination of the rain,
+\item validity of Poisson assumption,
+\item better estimation of $\lambda$ (mean number of template molecules per partition) and concentration.
+\end{itemize}
+
+\end{frame}
+
+\section{Aim} 
+
+\begin{frame}{Aim}
+
+\begin{table}
+\centering
+\begin{tabular}{|l|l|}
+\hline
+Existing software                                                                            & Desired software      \\ \hline
+\begin{tabular}[c]{@{}l@{}}closed-source (vendors), \\ open-source (scientific)\end{tabular} & open-source             \\ \hline
+partially reproducible                                                                       & fully reproducible      \\ \hline
+tied to a specific dPCR platform                                                                  & multi-platform          \\ \hline
+solving a specific problem                                                                   & focused on common tasks \\ \hline
+scattered                                                                                    & integrated              \\ \hline
+\end{tabular}
+\end{table}
+
+\end{frame}
+
+
+\begin{frame}{Aim}
+
+\begin{table}
+\centering
+\begin{tabular}{|l|l|}
+\hline
+Existing software                                                                            & Desired software      \\ \hline
+\begin{tabular}[c]{@{}l@{}}\textcolor{red}{closed-source (vendors)}, \\ \textcolor{red}{open-source (scientific)}\end{tabular} & \textcolor{red}{open-source}             \\ \hline
+partially reproducible                                                                       & fully reproducible      \\ \hline
+tied to a specific dPCR platform                                                                  & multi-platform          \\ \hline
+solving a specific problem                                                                   & focused on common tasks \\ \hline
+scattered                                                                                    & integrated              \\ \hline
+\end{tabular}
+\end{table}
+
+\end{frame}
+
+\begin{frame}{Aim}
+
+\begin{table}
+\centering
+\begin{tabular}{|l|l|}
+\hline
+Existing software                                                                            & Desired software      \\ \hline
+\begin{tabular}[c]{@{}l@{}}closed-source (vendors), \\ open-source (scientific)\end{tabular} & open-source             \\ \hline
+\textcolor{red}{partially reproducible}                                                                       & \textcolor{red}{fully reproducible}      \\ \hline
+tied to a specific dPCR platform                                                                  & multi-platform          \\ \hline
+solving a specific problem                                                                   & focused on common tasks \\ \hline
+scattered                                                                                    & integrated              \\ \hline
+\end{tabular}
+\end{table}
+
+\end{frame}
+
+
+\begin{frame}{Aim}
+
+\begin{table}
+\centering
+\begin{tabular}{|l|l|}
+\hline
+Existing software                                                                            & Desired software      \\ \hline
+\begin{tabular}[c]{@{}l@{}}closed-source (vendors), \\ open-source (scientific)\end{tabular} & open-source             \\ \hline
+partially reproducible                                                                       & fully reproducible      \\ \hline
+\textcolor{red}{tied to a specific dPCR platform}                                                                  & \textcolor{red}{multi-platform}          \\ \hline
+solving a specific problem                                                                   & focused on common tasks \\ \hline
+scattered                                                                                    & integrated              \\ \hline
+\end{tabular}
+\end{table}
+
+\end{frame}
+
+
+\begin{frame}{Aim}
+
+\begin{table}
+\centering
+\begin{tabular}{|l|l|}
+\hline
+Existing software                                                                            & Desired software      \\ \hline
+\begin{tabular}[c]{@{}l@{}}closed-source (vendors), \\ open-source (scientific)\end{tabular} & open-source             \\ \hline
+partially reproducible                                                                       & fully reproducible      \\ \hline
+tied to a specific dPCR platform                                                                  & multi-platform          \\ \hline
+\textcolor{red}{solving a specific problem}                                                                   & \textcolor{red}{focused on common tasks} \\ \hline
+scattered                                                                                    & integrated              \\ \hline
+\end{tabular}
+\end{table}
+
+\end{frame}
+
+\begin{frame}{Aim}
+
+\begin{table}
+\centering
+\begin{tabular}{|l|l|}
+\hline
+Existing software                                                                            & Desired software      \\ \hline
+\begin{tabular}[c]{@{}l@{}}closed-source (vendors), \\ open-source (scientific)\end{tabular} & open-source             \\ \hline
+partially reproducible                                                                       & fully reproducible      \\ \hline
+tied to a specific dPCR platform                                                                  & multi-platform          \\ \hline
+solving a specific problem                                                                   & focused on common tasks \\ \hline
+\textcolor{red}{scattered}                                                                                    & \textcolor{red}{integrated}              \\ \hline
+\end{tabular}
+\end{table}
+
+\end{frame}
+
+\begin{frame}{Aim}
+
+\begin{table}
+\centering
+\begin{tabular}{|l|l|}
+\hline
+Existing software                                                                            &  \textcolor{blue}{dpcReport}     \\ \hline
+\begin{tabular}[c]{@{}l@{}}closed-source (vendors), \\ open-source (scientific)\end{tabular} & open-source             \\ \hline
+partially reproducible                                                                       & fully reproducible      \\ \hline
+tied to a specific platform                                                                  & multi-platform          \\ \hline
+solving a specific problem                                                                   & focused on common tasks \\ \hline
+scattered                                                                                    & integrated              \\ \hline
+\end{tabular}
+\end{table}
+
+\end{frame}
+
+
+% \begin{frame}{Aim}
+% 
+% Create framework for dPCR data analysis:
+% \begin{itemize}[<+(1)->]
+% \item tailored for the most common tasks, 
+% %(comparison of multiple experiments and quality control),
+% \item universal,
+% \item unified,
+% \item reproducible.
+% \end{itemize}
+% 
+% \end{frame}
+
+\section{dpcReport framework}
+
+\begin{frame}{dpcReport framework}
+dpcReport: a web server for dPCR data focused on the analysis estimation of a template concentration in a sample.
+
+\pause
+
+\begin{equation}
+c = \frac{\lambda}{v}
+\end{equation}
+
+$\lambda$: mean number of template molecules per partition.
+
+$v$: volume of a partition.
+
+\end{frame}
+
+\begin{frame}{dpcReport framework}
+\includegraphics[width=0.90\textwidth]{static_figure/dpcreport_workflow_full.eps}
+\end{frame}
+
+\begin{frame}{dpcReport framework}
+\includegraphics[width=0.90\textwidth]{static_figure/dpcreport_workflow_p1.eps}
+\end{frame}
+
+\begin{frame}{dpcReport framework}
+\includegraphics[width=0.90\textwidth]{static_figure/dpcreport_workflow_p2.eps}
+\end{frame}
+
+\begin{frame}{dpcReport framework}
+\includegraphics[width=0.90\textwidth]{static_figure/dpcreport_workflow_p3.eps}
+\end{frame}
+
+\begin{frame}{dpcReport framework}
+\includegraphics[width=0.90\textwidth]{static_figure/dpcreport_workflow_p4.eps}
+\end{frame}
+
+\begin{frame}{dpcReport framework}
+\includegraphics[width=0.90\textwidth]{static_figure/dpcreport_workflow_p5.eps}
+\end{frame}
+
+\begin{frame}{Input file}
+
+There are no universal format for dPCR data. Each system provides output in a different format. File formats differ between systems provided by the same vendor (QX100 vs QX200).
+
+dpcReport supports analysis of data in following file formats:
+\begin{itemize}
+\item QX100 (Bio-Rad),
+\item QX200 (Bio-Rad),
+\item BioMark (Fluidigm).
+\item raw amplitude data.
+\item REDF.
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}{REDF}
+
+REDF (Raw Exchange Digital PCR format): universal and minimal format for dPCR data analysis.
+
+\footnotesize{
+<<echo = FALSE, message=FALSE,warning=FALSE,fig.height = 4>>=
+tmp_dat <- dpcr2df(six_panels) %>% 
+  mutate(replicate = as.numeric(as.character(replicate)),
+         panel_id = as.numeric(as.character(panel_id)))
+rownames(tmp_dat) <- NULL
+knitr::kable(tmp_dat)
+@
+}
+
+Documentation: \url{http://michbur.github.io/dpcR_manual/}.
+
+\end{frame}
+
+\begin{frame}{Comparison of multiple runs}
+
+dPCR was used in absolute quantification of levels of biomarker X in 4 patients.
+
+<<echo = FALSE, message=FALSE,warning=FALSE,fig.height = 4>>=
+ks <- c(15, 14, 29, 32)
+ex_df <- data.frame(id = paste0("P", 1L:4),
+                    k = ks,
+                    conc = dpcR:::fl(ks/765),
+                    status = c(rep("control", 2), rep("cancer", 2)))
+
+ggplot(ex_df, aes(x = id, y = k, fill = status, label = k)) +
+  geom_bar(stat = "identity") +
+  geom_text(vjust = 2) +
+  scale_fill_manual("Patient status", values = c("orange1", "cornflowerblue")) +
+  scale_x_discrete("Patient ID") +
+  #scale_y_continuous("Concentration of a biomarker X") +
+  scale_y_continuous("Number of positive partitions") +
+  my_theme
+
+@
+
+The number of partitions is constant and equal to 765.
+
+\end{frame}
+
+
+\begin{frame}{Comparison of multiple runs}
+
+Are concentrations of biomarker X significantly different between patients?
+
+<<echo = FALSE, message=FALSE,warning=FALSE,fig.height = 4,results='asis'>>=
+generate_dat <- function(k) {
+  k_len <- length(k)
+  data.frame(experiment = paste0("Experiment", 1L:k_len), 
+             replicate = rep(1, k_len),
+             assay = rep("MYC", k_len),
+             k = k,
+             n = rep(765, k_len),
+             threshold = 1,
+             v = rep(1, k_len),
+             uv = rep(0, k_len)) %>% df2dpcr
+}
+
+
+#ks %>% generate_dat  %>% test_counts() %>% slot("test_res")
+single_cmp <- data.frame(cbind(rbind(c(15, 14) %>% generate_dat  %>% test_counts() %>% slot("test_res"),
+                                     c(15, 29) %>% generate_dat  %>% test_counts() %>% slot("test_res"),
+                                     c(15, 32) %>% generate_dat  %>% test_counts() %>% slot("test_res"),
+                                     c(29, 15) %>% generate_dat  %>% test_counts() %>% slot("test_res"),
+                                     c(32, 15) %>% generate_dat  %>% test_counts() %>% slot("test_res"),
+                                     c(32, 29) %>% generate_dat  %>% test_counts() %>% slot("test_res")),
+                               k1 = c(15, 15, 15, 29, 32, 32), k2 = c(14, 29, 32, 15, 15, 29))) %>% 
+  mutate(nice_p_value = formatC(p_value, format = "f"),
+         k1 = ifelse(k1 %in% c(29, 32), 
+                     paste0("\\textcolor{my_orange}{", k1, "}"),
+                     paste0("\\textcolor{my_blue}{", k1, "}")),
+         k2 = ifelse(k2 %in% c(29, 32), 
+                     paste0("\\textcolor{my_orange}{", k2, "}"),
+                     paste0("\\textcolor{my_blue}{", k2, "}"))) %>% 
+  mutate(nice_p_value = ifelse(p_value < 0.05, paste0("\\textcolor{red}{", nice_p_value, "}"), nice_p_value))
+rownames(single_cmp) <- NULL
+colnames(single_cmp)[2L:4] <- c("k_1", "k_2", "p-value")
+print(xtable(single_cmp[-1], digits = 0), 
+      include.rownames = FALSE,
+      sanitize.text.function = function(x) x)
+
+
+@
+
+
+
+\end{frame}
+
+
+\begin{frame}{Multiple comparison}
+
+<<echo = FALSE, message=FALSE,warning=FALSE,fig.height = 4>>=
+data.frame(n_cmp = 1L:6) %>% 
+  mutate(prob = 1 - 0.95^n_cmp,
+         n_cmp = factor(n_cmp)) %>% 
+  ggplot(aes(x = n_cmp, y = prob)) +
+  geom_bar(stat = "identity") +
+  scale_x_discrete("Number of comparisons") +
+  scale_y_continuous("Type I error probability\n(significance level 0.05)", breaks = 0L:5/20) +
+  my_theme
+@
+
+
+Multiple comparison problem: the more comparisons, the higher chance of the type I error (a rejection of a true null hypothesis).
+
+\end{frame}
+
+\begin{frame}{Comparison of multiple runs}
+Solution: False Discovery Rate~\citep{benjamini_controlling_1995} (correction for multiple comparisons) used by dpcReport~\citep{burdukiewicz_methods_2016}.
+
+<<echo = FALSE, message=FALSE,warning=FALSE,fig.height = 4,results='asis'>>=
+multi_cmp <- ks %>% generate_dat  %>% test_counts() %>% slot("test_res")
+multi_cmp <- ks %>% generate_dat  %>% test_counts() %>% slot("test_res") %>% 
+  cbind(., k1 = c(15, 15, 15, 29, 32, 32), 
+        k2 = c(14, 29, 32, 15, 15, 29)) %>% 
+  data.frame() %>% 
+  mutate(nice_p_value = formatC(p_value, format = "f"),
+         k1 = ifelse(k1 %in% c(29, 32), 
+                     paste0("\\textcolor{my_orange}{", k1, "}"),
+                     paste0("\\textcolor{my_blue}{", k1, "}")),
+         k2 = ifelse(k2 %in% c(29, 32), 
+                     paste0("\\textcolor{my_orange}{", k2, "}"),
+                     paste0("\\textcolor{my_blue}{", k2, "}"))) %>% 
+  mutate(nice_p_value = ifelse(p_value < 0.05, paste0("\\textcolor{red}{", nice_p_value, "}"), nice_p_value))
+
+colnames(multi_cmp)[2L:4] <- c("k_1", "k_2", "p-value")
+
+print(xtable(multi_cmp[-1], digits = 0), 
+      include.rownames = FALSE,
+      sanitize.text.function = function(x) x)
+@
+
+\pause
+
+Comparison of multiple runs is one of the most common and crucial tasks in dPCR, but no software does that.
+
+\end{frame}
+
+
+\begin{frame}{Comparison of multiple runs}
+Multiple comparison problem affects also confidence intervals when they are used for testing. 
+
+Aim of the study: how often the confidence interval of measured sample concentration covers the known sample concentration?
+
+\pause
+
+\begin{itemize}[<+->]
+\item Data: three replicates of five dillutions of the reference gene measured using QX100 machine.
+\item Methods: Bhat's confidence intervals~\citep{bhat_single_2009-1} and MRT confidence intervals~\citep{burdukiewicz_methods_2016}.
+\end{itemize}
+
+
+\end{frame}
+
+
+\begin{frame}{Comparison of multiple runs}
+<<echo = FALSE, message=FALSE,warning=FALSE,fig.height = 4,results='asis'>>=
+library(ggplot2)
+library(reshape2)
+library(dplyr)
+library(latex2exp)
+library(grid)
+library(gridExtra)
+library(gtable)
+
+real_data_CI <- read.csv("./data/real_data_CI.csv") %>% 
+  filter(experiment %in% c(0.05, 0.25, 0.5, 0.75, 1),
+         method != "Dube") %>% 
+  mutate(experiment_nice = factor(as.character(experiment_nice), paste0(c(0.05, 0.25, 0.5, 0.75, 1)*100, "%")))
+
+pp <- ggplot(real_data_CI, aes(x = replicate, y = lambda, ymax = lambda.up, ymin = lambda.low, color = covered)) +
+  geom_hline(aes(yintercept = real_value), color = "green", lwd = 1.1) +
+  geom_point() +
+  geom_errorbar(width = 0.5) +
+  scale_y_continuous(TeX("$\\lambda$")) +
+  scale_x_discrete("Replicate") + 
+  scale_color_manual(TeX("Confidence interval covers real value of $\\lambda$"),
+                     values = c("chocolate3", "skyblue3")) +
+  facet_grid(method ~ experiment_nice) + 
+  my_theme
+
+pp_grobs <- ggplotGrob(pp)
+
+pp_grobs <- gtable_add_cols(pp_grobs, unit(2, "lines"))
+pp_grobs <- gtable_add_grob(pp_grobs, 
+                            list(rectGrob(x = unit(0.25, "npc"),
+                                          gp = gpar(fill = "lightgrey", colour = "black"),
+                                          width = unit(0.5, "npc")),
+                                 textGrob("Method", x = unit(0.25, "npc"), rot = -90, 
+                                          gp = gpar(col = "black", fontsize = 11, fontface = "bold"))),
+                            t = 4, l = 16, r = 17, b = 10, name = paste(runif(2)))
+pp_grobs <- gtable_add_cols(pp_grobs, unit(1, "lines"))
+
+pp_grobs <- gtable_add_rows(pp_grobs, unit(2, "lines"), 2)
+pp_grobs <- gtable_add_grob(pp_grobs, 
+                            list(rectGrob(y = unit(0.25, "npc"),
+                                          gp = gpar(fill = "lightgrey", colour = "black"),
+                                          height = unit(0.5, "npc")),
+                                 textGrob("Dilution", y = unit(0.25, "npc"),
+                                          gp = gpar(col = "black", fontsize = 11, fontface = "bold"))),
+                            t = 3, l = 4, r = 14, b = 3, name = paste(runif(2)))
+
+grid.newpage()
+grid.draw(pp_grobs)
+
+@
+
+\cite{burdukiewicz_methods_2016}
+
+\end{frame}
+
+\section{Reproducibility}
+
+\begin{frame}{Reproducibility}
+
+Scientific software must support reproducibility, otherwise it is not scientific.
+
+\pause
+
+Reports generated with dpcReport contain enough information to allow the full reproduction of the conducted analysis.
+
+\end{frame}
+
+
+\begin{frame}{Reports}
+\begin{figure} 
+\includegraphics[width=0.95\textwidth]{static_figure/dcpReport_reprod1.png}
+\end{figure}
+\end{frame}
+
+\begin{frame}{Input file name}
+\begin{figure} 
+\includegraphics[width=0.95\textwidth]{static_figure/dcpReport_reprod3.png}
+\end{figure}
+\end{frame}
+
+
+\begin{frame}{Input file checksum}
+\begin{figure} 
+\includegraphics[width=0.95\textwidth]{static_figure/dcpReport_reprod4.png}
+\end{figure}
+
+A checksum allows detection of different files with the same name.
+
+\end{frame}
+
+
+\begin{frame}{Manual alterations inside dpcReport}
+\begin{figure} 
+\includegraphics[width=0.95\textwidth]{static_figure/dcpReport_reprod5.png}
+\end{figure}
+\end{frame}
+
+\begin{frame}
+\begin{figure} 
+\includegraphics[width=0.95\textwidth]{static_figure/dcpReport_reprod2.png}
+\end{figure}
+\end{frame}
+
+\begin{frame}{R Session}
+dpcReport is based on the \textbf{R} package \textit{dpcR}. All functionalities of dpcReport, including table and figure generation, are affected by changes in \textbf{R} and \textit{dpcR}.
+
+\end{frame}
+
+\begin{frame}{R Session}
+\begin{figure} 
+\includegraphics[width=0.95\textwidth]{static_figure/dcpReport_reprod6.png}
+\end{figure}
+\end{frame}
+
+\begin{frame}{Reproducibility of the workflow}
+
+An analysis conducted in a GUI-based software, as \textit{dpcReport}, is challenging to reproduce.
+
+\end{frame}
+
+
+\begin{frame}{Reproducibility of the workflow}
+
+\begin{figure} 
+\includegraphics[width=0.55\textwidth]{static_figure/dcpReport_Rcode.png}
+\end{figure}
+
+dpcReport exports all steps of the analysis, including parameters adjusted manually by the user, in form of the \textbf{R} code that recreates the whole workflow.
+
+\end{frame}
+
+\begin{frame}{Reproducibility of the workflow}
+\begin{figure} 
+\includegraphics[width=0.95\textwidth]{static_figure/dcpReport_reprod7.png}
+\end{figure}
+\end{frame}
+
+\section{Conclusions}
+
+\begin{frame}{Summary}
+\textit{dpcReport} is an open-source, universal and unified software for the reproducible analysis of dPCR data.
+\end{frame}
+
+\begin{frame}{Getting started}
+Web server: \url{http://tinyurl.com/dpcReport2}.
+
+\begin{figure} 
+\includegraphics[width=0.85\textwidth]{static_figure/dcpReport_entry.png}
+\end{figure}
+
+\end{frame}
+
+
+\begin{frame}[fragile]{Getting started}
+Local instance: \url{https://github.com/michbur/dpcR}.
+
+\begin{verbatim}
+
+install.packages("dpcR")
+library(dpcR)
+dpcReport()
+\end{verbatim}
+
+\end{frame}
+
+\begin{frame}{Acknowledgements and funding}
+
+\small{
+Collaborators:
+\begin{itemize}
+\item Jim Hugget and Alexandra Whale (LGC).
+\item Boris Fehse (University of Hamburg).
+\item Mario Menschikowski (Technical University of Dresden).
+\item Stefan R\"{o}diger (Brandenburg Technical University).
+\end{itemize}
+
+Funders:
+\begin{itemize}
+\item KNOW Consortium Wroc\l{}aw Center for Biotechnology,
+\item National Science Center (2015/17/N/NZ2/01845),
+\item COST action "Harmonising standardisation strategies to increase efficiency and competitiveness of European life-science research".
+\end{itemize}
+}
+
+\end{frame}
+
+
+\begin{frame}{}
+Local instance: \url{https://github.com/michbur/dpcR}.
+
+Web server: \url{http://tinyurl.com/dpcReport2}.
+
+Slides: \url{http://tinyurl.com/dpcReport-Freising}.
+
+dpcReport and dpcR are part of pcRuniveRsum: \url{http://michbur.github.io/pcRuniveRsum/} - everything for PCR in \textbf{R}.
+
+\end{frame}
+
+
+
+\begin{frame}[allowframebreaks]
+        \frametitle{References}
+  \bibliographystyle{apalike}
+  \bibliography{references}
+\end{frame}
+
+
+\end{document}
